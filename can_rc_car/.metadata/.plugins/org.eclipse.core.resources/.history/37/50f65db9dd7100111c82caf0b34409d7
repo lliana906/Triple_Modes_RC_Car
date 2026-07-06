@@ -1,0 +1,337 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file    main.c
+  * @brief   Ultrasonic 3 sensors (TIM2 IC) + Bluetooth(UART1) + Auto drive
+  *          + MCP2515 CAN(Raspberry Pi color-recognition speed cmd) + Camera mode
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include "spi.h"
+#include "tim.h"
+#include "usart.h"
+#include "gpio.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+#include "ult.h"
+#include "delay.h"
+#include "auto.h"
+#include "mot.h"
+#include "bt.h"
+#include "can.h"      // ✅ 추가: MCP2515 CAN 수신 (라즈베리파이 색인식 속도명령)
+#include "dbgserial.h" // ✅ 추가: USART2 = 0/1/2 속도명령 테스트 입력 + 5초 상태 출력
+#include <stdio.h>
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+#define TRIG_PERIOD_MS   35    // ✅ 35ms마다 1회 트리거 (간섭 있으면 40)
+#define AUTO_WARM_MS     400
+#define CAN_POLL_PERIOD_MS 20  // ✅ 추가: CAN 수신 폴링 주기
+#define DBG2_PRINT_PERIOD_MS 5000  // ✅ 추가: USART2로 상태 출력하는 주기(5초)
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+#ifdef __GNUC__
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#else
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#endif
+
+PUTCHAR_PROTOTYPE
+{
+  if(ch == '\n')
+    HAL_UART_Transmit(&huart1, (uint8_t*)"\r", 1, 0xFFFF);
+  HAL_UART_Transmit(&huart1, (uint8_t*)&ch, 1, 0xFFFF);
+  return ch;
+}
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+
+/* USER CODE BEGIN PV */
+static uint8_t bt_rx = 0;
+static uint8_t dbg2_rx = 0;   // ✅ 추가: USART2 수신 바이트
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+/* USER CODE BEGIN PFP */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART1)
+    {
+        BT_OnRxByte(bt_rx);
+        HAL_UART_Receive_IT(&huart1, &bt_rx, 1);
+    }
+    else if (huart->Instance == USART2)   // ✅ 추가: USART2 = 속도명령 테스트 입력
+    {
+        DBG_OnRxByte(dbg2_rx);
+        HAL_UART_Receive_IT(&huart2, &dbg2_rx, 1);
+    }
+}
+
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+    ULT_TIM_IC_CaptureCallback(htim);
+}
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_USART2_UART_Init();
+  MX_TIM3_Init();
+  MX_USART1_UART_Init();
+  MX_TIM2_Init();
+  MX_TIM11_Init();
+  MX_SPI1_Init();
+  /* USER CODE BEGIN 2 */
+  BT_Init();
+  HAL_UART_Receive_IT(&huart1, &bt_rx, 1);
+
+  DBG_Init();                              // ✅ 추가: USART2 디버그 라인 초기화
+  HAL_UART_Receive_IT(&huart2, &dbg2_rx, 1); // ✅ 추가: USART2 1바이트 수신 인터럽트 등록
+
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
+
+  HAL_TIM_Base_Start(&htim11);
+
+  ULT_Init();
+  CAN_Init();   // ✅ 추가: MCP2515 리셋 + 500kbps 설정 + Normal Mode 진입
+
+  printf("\r\nBOOT OK\r\n");
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  static uint32_t last_trig_ms = 0;
+  static uint32_t auto_warm_until = 0;
+  static uint32_t last_can_poll_ms = 0;   // ✅ 추가
+
+  static uint16_t d_left=0, d_front=0, d_right=0;
+
+  static DriveMode_t last_mode = MODE_MANUAL;
+
+  static uint32_t last_dbg_ms = 0;
+  static uint32_t last_manual_ms = 0;
+  static uint32_t last_dbg2_ms = 0;   // ✅ 추가: USART2 5초 출력 주기용
+
+  // ✅ 전방을 더 자주: F-F-L-F-R
+  static const uint8_t trig_seq[5] = {1, 1, 0, 1, 2};
+  static uint8_t seq_i = 0;
+
+  while (1)
+  {
+      uint32_t now = HAL_GetTick();
+
+      BT_Process();
+      DriveMode_t mode = BT_GetMode();
+
+      DBG_Process();   // ✅ 추가: USART2로 들어온 0/1/2 키 처리 (모드 무관, 항상 동작)
+
+      // ✅ CAN은 모드와 무관하게 항상 최신 상태로 폴링 (모드 전환 직후에도 바로 반영되게)
+      if (now - last_can_poll_ms >= CAN_POLL_PERIOD_MS)
+      {
+          last_can_poll_ms = now;
+          CAN_Poll();
+      }
+
+      // ✅ 추가: 5초마다 USART2로 현재 속도명령/배율 + 초음파 거리 출력 (모드 무관)
+      if (now - last_dbg2_ms >= DBG2_PRINT_PERIOD_MS)
+      {
+          last_dbg2_ms = now;
+          DBG_PrintStatus(d_left, d_front, d_right);
+      }
+
+      if (mode != last_mode)
+      {
+          Mot_Stop();
+
+          if (mode == MODE_AUTO || mode == MODE_CAMERA)   // ✅ 변경: CAMERA도 AUTO와 동일하게 초음파 FSM 초기화
+          {
+              Auto_Init();
+              d_left = d_front = d_right = 0;
+
+              seq_i = 0;
+              last_trig_ms = now;
+              auto_warm_until = now + AUTO_WARM_MS;
+
+              printf(mode == MODE_AUTO ? "[MODE] AUTO\r\n" : "[MODE] CAMERA\r\n");  // ✅ 변경
+          }
+          else
+          {
+              printf("[MODE] MANUAL\r\n");
+          }
+
+          last_mode = mode;
+      }
+
+      if (mode == MODE_AUTO || mode == MODE_CAMERA)   // ✅ 변경: 두 모드 모두 초음파 FSM 작동
+      {
+          if (now < auto_warm_until)
+          {
+              Mot_Stop();
+              continue;
+          }
+
+          // (1) 트리거
+          if (now - last_trig_ms >= TRIG_PERIOD_MS)
+          {
+              last_trig_ms = now;
+              ULT_Trigger(trig_seq[seq_i]);
+              seq_i = (seq_i + 1) % 5;
+          }
+
+          // (2) 타임아웃 처리
+          ULT_Update();
+
+          // (3) 거리 갱신 (0도 갱신)
+          if (ULT_IsReady(0)) { d_left  = ULT_GetDistance(0); ULT_ClearReady(0); }
+          if (ULT_IsReady(1)) { d_front = ULT_GetDistance(1); ULT_ClearReady(1); }
+          if (ULT_IsReady(2)) { d_right = ULT_GetDistance(2); ULT_ClearReady(2); }
+
+          // (4) 자율주행
+          // ✅ AUTO 모드: speed_scale=1.0 (CAN 영향 없음, 기존 동작 그대로)
+          // ✅ CAMERA 모드: 라즈베리파이가 보낸 색인식 속도배율 적용
+          float speed_scale = (mode == MODE_CAMERA) ? CAN_GetSpeedScale() : 1.0f;
+          Auto_Update(d_left, d_front, d_right, speed_scale);
+
+          // (5) 디버그
+          if (now - last_dbg_ms >= 500)
+          {
+              last_dbg_ms = now;
+              uint32_t arr  = __HAL_TIM_GET_AUTORELOAD(&htim3);
+              uint32_t ccr1 = __HAL_TIM_GET_COMPARE(&htim3, TIM_CHANNEL_1);
+              uint32_t ccr2 = __HAL_TIM_GET_COMPARE(&htim3, TIM_CHANNEL_2);
+
+              if (mode == MODE_CAMERA)
+              {
+                  // ✅ 추가: 카메라 모드에서는 CAN cmd/age + FSM 상태(state)도 같이 출력
+                  // state: R=직진/조향중, P=턴진입대기, L/r=좌/우회전중
+                  printf("[CAM] state:%c L:%u F:%u R:%u | CAN_cmd:%u scale:%d%% age:%lums | ARR:%lu CCR1:%lu CCR2:%lu\r\n",
+                         Auto_GetStateChar(),
+                         d_left, d_front, d_right,
+                         CAN_GetSpeedCmd(), (int)(speed_scale * 100),
+                         (unsigned long)CAN_GetLastRxAgeMs(),
+                         (unsigned long)arr, (unsigned long)ccr1, (unsigned long)ccr2);
+              }
+              else
+              {
+                  printf("[AUTO] state:%c L:%u F:%u R:%u | ARR:%lu CCR1:%lu CCR2:%lu\r\n",
+                         Auto_GetStateChar(),
+                         d_left, d_front, d_right,
+                         (unsigned long)arr, (unsigned long)ccr1, (unsigned long)ccr2);
+              }
+          }
+      }
+      else
+      {
+          if (now - last_manual_ms >= 400)
+          {
+              last_manual_ms = now;
+              printf("[MANUAL]\r\n");
+          }
+      }
+  }
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+  /* USER CODE END 3 */
+}
+
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  __HAL_RCC_PWR_CLK_ENABLE();
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 100;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 4;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = HAL_RCC_GetPCLK1Freq() > 42000000 ? RCC_HCLK_DIV2 : RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+void Error_Handler(void)
+{
+  __disable_irq();
+  while (1)
+  {
+  }
+}
+
+#ifdef USE_FULL_ASSERT
+void assert_failed(uint8_t *file, uint32_t line)
+{
+}
+#endif /* USE_FULL_ASSERT */

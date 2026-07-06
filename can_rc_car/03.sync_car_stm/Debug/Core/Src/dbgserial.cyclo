@@ -1,0 +1,5 @@
+../Core/Src/dbgserial.c:22:13:Dbg2_Print	1
+../Core/Src/dbgserial.c:27:6:DBG_Init	1
+../Core/Src/dbgserial.c:34:6:DBG_OnRxByte	1
+../Core/Src/dbgserial.c:40:6:DBG_Process	5
+../Core/Src/dbgserial.c:62:6:DBG_PrintStatus	1

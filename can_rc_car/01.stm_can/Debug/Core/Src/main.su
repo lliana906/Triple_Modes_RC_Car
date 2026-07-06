@@ -1,0 +1,10 @@
+../Core/Src/main.c:37:9:MCP2515_ReadRegister	24	static
+../Core/Src/main.c:51:6:MCP2515_WriteRegister	24	static
+../Core/Src/main.c:62:6:MCP2515_Reset	16	static
+../Core/Src/main.c:71:6:MCP2515_SetNormalMode	8	static
+../Core/Src/main.c:76:6:MCP2515_SetReceiveAny	8	static
+../Core/Src/main.c:82:9:MCP2515_CheckAndReadRX0	32	static
+../Core/Src/main.c:116:6:Debug_Print	16	static
+../Core/Src/main.c:122:5:main	288	static
+../Core/Src/main.c:232:6:SystemClock_Config	88	static
+../Core/Src/main.c:267:6:Error_Handler	4	static,ignoring_inline_asm

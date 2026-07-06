@@ -1,0 +1,10 @@
+08:17:06 **** Incremental Build of configuration Debug for project no_ult ****
+make -j12 all 
+arm-none-eabi-size  no_ult.elf 
+   text	   data	    bss	    dec	    hex	filename
+  34020	    108	   2532	  36660	   8f34	no_ult.elf
+Finished building: default.size.stdout
+ 
+
+08:17:06 Build Finished. 0 errors, 0 warnings. (took 152ms)
+

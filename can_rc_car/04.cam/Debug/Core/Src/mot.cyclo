@@ -1,0 +1,8 @@
+../Core/Src/mot.c:13:24:clamp_pwm	3
+../Core/Src/mot.c:22:6:MotorA_Control	3
+../Core/Src/mot.c:43:6:MotorB_Control	3
+../Core/Src/mot.c:66:6:Mot_Stop	1
+../Core/Src/mot.c:72:6:Mot_Forward	1
+../Core/Src/mot.c:78:6:Mot_Backward	1
+../Core/Src/mot.c:85:6:Mot_TurnLeft	1
+../Core/Src/mot.c:92:6:Mot_TurnRight	1

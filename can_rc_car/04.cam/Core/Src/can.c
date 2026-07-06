@@ -1,0 +1,273 @@
+/*
+ * can.c
+ * MCP2515 수신 전용 드라이버. 기존 uploaded main.c의 MCP2515 함수들을
+ * 그대로 옮기고, RC카 FSM(auto.c)에서 쓰기 쉬운 형태로 감쌈.
+ *
+ * 핀맵 (MX 설정 기준, 두 번째 캡처로 확정):
+ *   PB13 = can_CS   (SPI1 CS, Output, GPIOB)
+ *   PB14 = can_INT  (External Interrupt, GPIOB) - 현재는 폴링만 사용, INT는 안 씀
+ *   SPI1 SCK=PB3, MISO=PB4, MOSI=PB5 (MX_SPI1_Init()에서 이미 처리되므로 본 파일에서 손댈 것 없음)
+ */
+
+#include "can.h"
+#include "spi.h"
+#include "main.h"   // ✅ can_CS_Pin, can_CS_GPIO_Port (MX gpio.c에서 생성된 매크로 사용)
+#include <string.h>
+
+extern SPI_HandleTypeDef hspi1;
+
+/* ===== CS 핀: MX가 gpio.c/main.h에 생성한 매크로를 그대로 사용 (PB13) ===== */
+#define CS_LOW()   HAL_GPIO_WritePin(can_CS_GPIO_Port, can_CS_Pin, GPIO_PIN_RESET)
+#define CS_HIGH()  HAL_GPIO_WritePin(can_CS_GPIO_Port, can_CS_Pin, GPIO_PIN_SET)
+
+/* ===== MCP2515 레지스터 ===== */
+#define MCP_CANCTRL   0x0F
+#define MCP_CANSTAT   0x0E
+#define MCP_CANINTF   0x2C
+#define MCP_EFLG      0x2D
+#define MCP_EFLG_RX0OVR 0x40
+#define MCP_EFLG_RX1OVR 0x80
+#define MCP_EFLG_TXBO   0x20  // Bus-off
+#define MCP_RXB0CTRL  0x60
+#define MCP_RXB0SIDH  0x61
+#define MCP_RXB1CTRL  0x70
+#define MCP_RXB1SIDH  0x71
+#define MCP_CNF3      0x28  // CNF3, CNF2, CNF1 연속 주소
+
+#define MCP_CMD_RESET 0xC0
+#define MCP_CMD_READ  0x03
+#define MCP_CMD_WRITE 0x02
+#define MCP_CMD_BITMOD 0x05
+
+static volatile uint8_t  s_speed_cmd = CAN_CMD_NORMAL; // 기본값: 정속(통신 전엔 안전하게 동작)
+static volatile uint32_t s_last_rx_ms = 0;
+static volatile uint32_t s_reinit_count = 0; // bus-off 등으로 인한 자동 재초기화 횟수 (진단용)
+
+/* ✅ 복원: 마지막 CAN 수신 후 이 시간(ms)이 지나면 무조건 정속(NORMAL)으로 간주.
+ * 라즈베리파이 색인식이 3초 이상 끊기면(신호가 화면 밖으로 나가거나 애매해짐)
+ * "마지막 값 고정"이 아니라 안전하게 정속으로 복귀시키는 페일세이프.
+ * (CAN 통신 자체는 이제 안정화되어 5초->3초로 더 타이트하게 설정) */
+#define CAN_FAILSAFE_TIMEOUT_MS 3000
+
+static uint8_t MCP_ReadReg(uint8_t addr)
+{
+    uint8_t result = 0;
+    uint8_t cmd = MCP_CMD_READ;
+
+    CS_LOW();
+    HAL_SPI_Transmit(&hspi1, &cmd, 1, 100);
+    HAL_SPI_Transmit(&hspi1, &addr, 1, 100);
+    HAL_SPI_Receive(&hspi1, &result, 1, 100);
+    CS_HIGH();
+
+    return result;
+}
+
+static void MCP_WriteReg(uint8_t addr, uint8_t value)
+{
+    uint8_t cmd = MCP_CMD_WRITE;
+
+    CS_LOW();
+    HAL_SPI_Transmit(&hspi1, &cmd, 1, 100);
+    HAL_SPI_Transmit(&hspi1, &addr, 1, 100);
+    HAL_SPI_Transmit(&hspi1, &value, 1, 100);
+    CS_HIGH();
+}
+
+static void MCP_Reset(void)
+{
+    uint8_t cmd = MCP_CMD_RESET;
+    CS_LOW();
+    HAL_SPI_Transmit(&hspi1, &cmd, 1, 100);
+    CS_HIGH();
+    HAL_Delay(10);
+}
+
+static void MCP_SetNormalMode(void)
+{
+    MCP_WriteReg(MCP_CANCTRL, 0x00);
+}
+
+/* ✅ 변경: RXB0CTRL bit2(BUKT)=1로 설정 -> RXB0가 가득 차면 자동으로 RXB1로 롤오버.
+ * 이게 없으면 폴링 주기(20ms)와 송신 주기가 겹칠 때 RXB0가 비기 전에 새 메시지가
+ * 도착해서 드롭되고, 그 결과 "오래된 값"이 계속 남아있는 것처럼 보일 수 있음.
+ * 0x64 = 필터무시(모든 메시지 수신, bit5,6=11) | BUKT(bit2)=1 */
+static void MCP_SetReceiveAny(void)
+{
+    MCP_WriteReg(MCP_RXB0CTRL, 0x64);
+    MCP_WriteReg(MCP_RXB1CTRL, 0x60); // RXB1도 필터 무시 + 모든 메시지 수신
+}
+
+/* ✅ 변경: RXB0뿐 아니라 RXB1도 체크 (CANINTF bit0=RX0IF, bit1=RX1IF).
+ * BUKT(롤오버)로 넘어온 메시지는 RXB1에 쌓이므로, 여기를 안 보면
+ * 메시지가 도착했는데도 못 읽는(=오래된 값이 고정된 것처럼 보이는) 상황이 생김. */
+static uint8_t MCP_ReadRxBuffer(uint8_t sidh_addr, uint8_t *rx_data, uint8_t *rx_dlc)
+{
+    uint8_t cmd = MCP_CMD_READ;
+    uint8_t header[5]; // SIDH, SIDL, EID8, EID0, DLC
+
+    CS_LOW();
+    HAL_SPI_Transmit(&hspi1, &cmd, 1, 100);
+    HAL_SPI_Transmit(&hspi1, &sidh_addr, 1, 100);
+    HAL_SPI_Receive(&hspi1, header, 5, 100);
+
+    uint8_t dlc = header[4] & 0x0F;
+    if (dlc > 8) dlc = 8;
+
+    HAL_SPI_Receive(&hspi1, rx_data, dlc, 100);
+    CS_HIGH();
+
+    *rx_dlc = dlc;
+    return dlc;
+}
+
+/* CANINTF RX0IF/RX1IF 비트를 확인해서 들어온 메시지를 읽고 해당 플래그를 클리어.
+ * 둘 다 있으면 RXB0 -> RXB1 순으로 처리(한 번 호출에 하나만 반환, 다음 폴링에서 나머지 처리). */
+static uint8_t MCP_CheckAndReadRX0(uint8_t *rx_data, uint8_t *rx_dlc)
+{
+    uint8_t canintf = MCP_ReadReg(MCP_CANINTF);
+
+    if (canintf & 0x01) { // RX0IF
+        MCP_ReadRxBuffer(MCP_RXB0SIDH, rx_data, rx_dlc);
+
+        uint8_t bitmod_cmd[4] = { MCP_CMD_BITMOD, MCP_CANINTF, 0x01, 0x00 };
+        CS_LOW();
+        HAL_SPI_Transmit(&hspi1, bitmod_cmd, 4, 100);
+        CS_HIGH();
+
+        return 1;
+    }
+    else if (canintf & 0x02) { // RX1IF (롤오버로 넘어온 메시지)
+        MCP_ReadRxBuffer(MCP_RXB1SIDH, rx_data, rx_dlc);
+
+        uint8_t bitmod_cmd[4] = { MCP_CMD_BITMOD, MCP_CANINTF, 0x02, 0x00 };
+        CS_LOW();
+        HAL_SPI_Transmit(&hspi1, bitmod_cmd, 4, 100);
+        CS_HIGH();
+
+        return 1;
+    }
+    return 0;
+}
+
+void CAN_Init(void)
+{
+    s_speed_cmd = CAN_CMD_NORMAL;
+    s_last_rx_ms = HAL_GetTick();
+
+    CS_HIGH();
+
+    MCP_Reset();
+
+    uint8_t canctrl = MCP_ReadReg(MCP_CANCTRL);
+    if ((canctrl & 0xE0) != 0x80) {
+        /* Config Mode 진입 실패 - 배선/전원 확인 필요. 일단 진행은 계속함 */
+    }
+
+    /* 8MHz 크리스탈, 500kbps: CNF3,CNF2,CNF1 연속 쓰기.
+     * ✅ 변경: 기존 값(CNF1=0x00,CNF2=0x90,CNF3=0x02)은 샘플포인트가 62.5%로 낮아서
+     * 약간의 클럭오차/노이즈에도 비트 에러가 누적되기 쉬웠음.
+     * 새 값은 동일하게 8Tq/500kbps를 유지하면서 샘플포인트를 75%로 개선
+     * (PRSEG=3Tq, PHSEG1=2Tq, PHSEG2=2Tq, SyncSeg=1Tq). */
+    uint8_t wcmd = MCP_CMD_WRITE;
+    uint8_t addr = MCP_CNF3;
+    uint8_t cnf_values[3] = { 0x01, 0x8A, 0x00 }; // CNF3, CNF2, CNF1
+
+    CS_LOW();
+    HAL_SPI_Transmit(&hspi1, &wcmd, 1, 100);
+    HAL_SPI_Transmit(&hspi1, &addr, 1, 100);
+    HAL_SPI_Transmit(&hspi1, cnf_values, 3, 100);
+    CS_HIGH();
+
+    MCP_SetReceiveAny();
+    MCP_SetNormalMode();
+    HAL_Delay(10);
+}
+
+void CAN_Poll(void)
+{
+    uint8_t rx_data[8] = { 0 };
+    uint8_t rx_dlc = 0;
+
+    /* ✅ 추가: bus-off/RX 오버플로우 감지 시 자동 재초기화.
+     * 종단저항/배선이 정상이어도 미세한 타이밍/노이즈로 에러가 누적되면
+     * MCP2515가 bus-off로 빠질 수 있고, 이건 수동 복구 전까지 통신이 막힘.
+     * EFLG를 매 폴링마다 확인해서 비정상 상태면 CAN_Init()으로 즉시 재시작. */
+    uint8_t eflg = MCP_ReadReg(MCP_EFLG);
+    if (eflg & (MCP_EFLG_TXBO | MCP_EFLG_RX0OVR | MCP_EFLG_RX1OVR)) {
+        s_reinit_count++;
+        CAN_Init();
+        return; // 재초기화 직후이므로 이번 폴링은 여기서 종료
+    }
+
+    /* 한 번의 Poll에서 RXB0/RXB1 둘 다 비움 (최대 2회 반복).
+     * 두 버퍼에 동시에 메시지가 쌓여있어도 한쪽이 계속 밀리지 않게 함. */
+    for (int i = 0; i < 2; i++) {
+        if (MCP_CheckAndReadRX0(rx_data, &rx_dlc)) {
+            uint8_t cmd = rx_data[0];
+            if (cmd == CAN_CMD_STOP || cmd == CAN_CMD_SLOW || cmd == CAN_CMD_NORMAL) {
+                s_speed_cmd = cmd;
+            }
+            s_last_rx_ms = HAL_GetTick();
+        } else {
+            break; // 더 이상 읽을 메시지 없음
+        }
+    }
+}
+
+/* ✅ 테스트용: 시리얼 '0'/'1'/'2' 키 입력으로 speed_cmd를 강제 설정.
+ * CAN 하드웨어/라즈베리파이 없이 auto.c의 speed_scale 동작만 먼저 확인할 때 사용. */
+void CAN_DebugSetSpeedCmd(uint8_t cmd)
+{
+    if (cmd == CAN_CMD_STOP || cmd == CAN_CMD_SLOW || cmd == CAN_CMD_NORMAL) {
+        s_speed_cmd = cmd;
+        s_last_rx_ms = HAL_GetTick();  // age도 갱신해서 "수신 끊김"으로 안 보이게 함
+    }
+}
+
+/* ✅ 복원: 마지막 수신 후 3초가 지났는지 확인. 지났으면 NORMAL로 보여줌.
+ * s_speed_cmd 원본은 안 건드리므로, 다음 수신 시 정상적으로 새 값 반영됨. */
+static uint8_t effective_speed_cmd(void)
+{
+    if ((HAL_GetTick() - s_last_rx_ms) >= CAN_FAILSAFE_TIMEOUT_MS) {
+        return CAN_CMD_NORMAL;
+    }
+    return s_speed_cmd;
+}
+
+uint8_t CAN_GetSpeedCmd(void)
+{
+    return effective_speed_cmd();
+}
+
+float CAN_GetSpeedScale(void)
+{
+    switch (effective_speed_cmd()) {
+        case CAN_CMD_STOP:   return 0.0f;
+        case CAN_CMD_SLOW:   return 0.5f;   // 저속: 50% — 필요시 조정
+        case CAN_CMD_NORMAL: return 1.0f;
+        default:             return 1.f;
+    }
+}
+
+uint32_t CAN_GetLastRxAgeMs(void)
+{
+    return HAL_GetTick() - s_last_rx_ms;
+}
+
+/* ✅ 추가: MCP2515 핵심 레지스터를 직접 읽어서 진단용으로 반환.
+ * CANINTF: 수신/에러 인터럽트 플래그, EFLG: 버스 에러 상태, CANSTAT: 현재 동작모드.
+ * "통신이 끊겼다"는 증상이 SPI 불량/배선/보드레이트/필터 중 어디서 막히는지
+ * 추측 대신 레지스터 값으로 바로 확인하기 위함. */
+void CAN_GetDiag(uint8_t *canintf, uint8_t *eflg, uint8_t *canstat)
+{
+    *canintf = MCP_ReadReg(MCP_CANINTF);
+    *eflg    = MCP_ReadReg(MCP_EFLG);
+    *canstat = MCP_ReadReg(MCP_CANSTAT);
+}
+
+/* ✅ 추가: bus-off 등으로 자동 재초기화된 누적 횟수. 0이면 통신이 끊긴 적 없음을 의미. */
+uint32_t CAN_GetReinitCount(void)
+{
+    return s_reinit_count;
+}

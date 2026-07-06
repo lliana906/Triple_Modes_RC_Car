@@ -1,0 +1,10 @@
+10:39:39 **** Incremental Build of configuration Debug for project blinker_RGB ****
+make -j12 all 
+arm-none-eabi-size  blinker_RGB.elf 
+   text	   data	    bss	    dec	    hex	filename
+  11420	     12	   1716	  13148	   335c	blinker_RGB.elf
+Finished building: default.size.stdout
+ 
+
+10:39:40 Build Finished. 0 errors, 0 warnings. (took 261ms)
+

@@ -1,0 +1,7 @@
+../Core/Src/auto.c:55:19:clamp_i	3
+../Core/Src/auto.c:61:21:clamp_f	3
+../Core/Src/auto.c:67:17:get_avg	2
+../Core/Src/auto.c:73:13:Enter	1
+../Core/Src/auto.c:78:6:Auto_Init	2
+../Core/Src/auto.c:86:6:Auto_GetStateChar	5
+../Core/Src/auto.c:96:6:Auto_Update	29

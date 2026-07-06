@@ -1,0 +1,16 @@
+../Core/Src/can.c:52:16:MCP_ReadReg	24	static
+../Core/Src/can.c:66:13:MCP_WriteReg	24	static
+../Core/Src/can.c:77:13:MCP_Reset	16	static
+../Core/Src/can.c:86:13:MCP_SetNormalMode	8	static
+../Core/Src/can.c:95:13:MCP_SetReceiveAny	8	static
+../Core/Src/can.c:104:16:MCP_ReadRxBuffer	32	static
+../Core/Src/can.c:126:16:MCP_CheckAndReadRX0	32	static
+../Core/Src/can.c:153:6:CAN_Init	16	static
+../Core/Src/can.c:187:6:CAN_Poll	32	static
+../Core/Src/can.c:220:6:CAN_DebugSetSpeedCmd	16	static
+../Core/Src/can.c:230:16:effective_speed_cmd	8	static
+../Core/Src/can.c:238:9:CAN_GetSpeedCmd	8	static
+../Core/Src/can.c:243:7:CAN_GetSpeedScale	8	static
+../Core/Src/can.c:253:10:CAN_GetLastRxAgeMs	8	static
+../Core/Src/can.c:262:6:CAN_GetDiag	24	static
+../Core/Src/can.c:270:10:CAN_GetReinitCount	4	static

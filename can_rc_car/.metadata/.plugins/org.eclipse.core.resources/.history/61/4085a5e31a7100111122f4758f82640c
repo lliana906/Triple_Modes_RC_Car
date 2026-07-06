@@ -1,0 +1,84 @@
+/*
+ * dbgserial.c
+ * USART2를 "속도명령 테스트 입력 + 상태 출력" 전용 라인으로 사용.
+ *
+ * - PC 시리얼 터미널에서 '0'/'1'/'2' 입력 -> CAN_DebugSetSpeedCmd() 호출
+ * - 5초마다 DBG_PrintStatus()로 현재 cmd/scale + 초음파 L/F/R 거리 출력
+ *
+ * printf()는 huart1(USART1, 블루투스용)에 고정되어 있으므로,
+ * USART2 출력은 HAL_UART_Transmit을 직접 사용하는 별도 함수로 처리.
+ */
+
+#include "dbgserial.h"
+#include "can.h"
+#include <stdio.h>
+#include <string.h>
+
+extern UART_HandleTypeDef huart2;
+
+static volatile uint8_t g_rx_pending = 0;
+static volatile uint8_t g_rx_byte = 0;
+
+static void Dbg2_Print(const char *msg)
+{
+    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 0xFFFF);
+}
+
+void DBG_Init(void)
+{
+    g_rx_pending = 0;
+    g_rx_byte = 0;
+    Dbg2_Print("\r\n[DBG2] Speed-cmd test line ready. Send 0=stop 1=slow 2=normal\r\n");
+}
+
+void DBG_OnRxByte(uint8_t b)
+{
+    g_rx_byte = b;
+    g_rx_pending = 1;
+}
+
+void DBG_Process(void)
+{
+    if (!g_rx_pending) return;
+    g_rx_pending = 0;
+
+    uint8_t c = g_rx_byte;
+
+    if (c == '0') {
+        CAN_DebugSetSpeedCmd(0);
+        Dbg2_Print("[DBG2] cmd set -> 0 (STOP)\r\n");
+    }
+    else if (c == '1') {
+        CAN_DebugSetSpeedCmd(1);
+        Dbg2_Print("[DBG2] cmd set -> 1 (SLOW)\r\n");
+    }
+    else if (c == '2') {
+        CAN_DebugSetSpeedCmd(2);
+        Dbg2_Print("[DBG2] cmd set -> 2 (NORMAL)\r\n");
+    }
+    /* 그 외 문자는 무시 */
+}
+
+void DBG_PrintStatus(uint16_t left_cm, uint16_t front_cm, uint16_t right_cm)
+{
+    char buf[160];
+    uint8_t cmd = CAN_GetSpeedCmd();
+    float scale = CAN_GetSpeedScale();
+    uint32_t age = CAN_GetLastRxAgeMs();
+
+    /* ✅ 추가: MCP2515 레지스터 직접 조회.
+     * canintf bit0/1=0이면 새 메시지가 아예 안 들어옴(필터/배선/보드레이트 의심).
+     * eflg!=0이면 버스 에러 발생 중(보드레이트 불일치, 종단저항 등 의심).
+     * canstat 상위3비트가 000이 아니면 Normal Mode 진입 실패. */
+    uint8_t canintf, eflg, canstat;
+    CAN_GetDiag(&canintf, &eflg, &canstat);
+
+    snprintf(buf, sizeof(buf),
+             "[DBG2] cmd=%u scale=%d%% age=%lums | L:%u F:%u R:%u | "
+             "CANINTF=0x%02X EFLG=0x%02X CANSTAT=0x%02X\r\n",
+             cmd, (int)(scale * 100), (unsigned long)age,
+             left_cm, front_cm, right_cm,
+             canintf, eflg, canstat);
+
+    Dbg2_Print(buf);
+}

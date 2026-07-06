@@ -1,0 +1,10 @@
+13:51:50 **** Incremental Build of configuration Debug for project cam ****
+make -j12 all 
+arm-none-eabi-size  cam.elf 
+   text	   data	    bss	    dec	    hex	filename
+  33596	    108	   2532	  36236	   8d8c	cam.elf
+Finished building: default.size.stdout
+ 
+
+13:51:51 Build Finished. 0 errors, 0 warnings. (took 207ms)
+

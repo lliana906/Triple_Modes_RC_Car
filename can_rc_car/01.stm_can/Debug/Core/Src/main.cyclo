@@ -1,0 +1,10 @@
+../Core/Src/main.c:37:9:MCP2515_ReadRegister	1
+../Core/Src/main.c:51:6:MCP2515_WriteRegister	1
+../Core/Src/main.c:62:6:MCP2515_Reset	1
+../Core/Src/main.c:71:6:MCP2515_SetNormalMode	1
+../Core/Src/main.c:76:6:MCP2515_SetReceiveAny	1
+../Core/Src/main.c:82:9:MCP2515_CheckAndReadRX0	3
+../Core/Src/main.c:116:6:Debug_Print	1
+../Core/Src/main.c:122:5:main	7
+../Core/Src/main.c:232:6:SystemClock_Config	4
+../Core/Src/main.c:267:6:Error_Handler	1

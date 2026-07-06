@@ -1,0 +1,21 @@
+08:17:04 **** Incremental Build of configuration Debug for project no_ult ****
+make -j12 all 
+arm-none-eabi-gcc "../Core/Src/can.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F411xE -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/can.d" -MT"Core/Src/can.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/can.o"
+arm-none-eabi-gcc -o "no_ult.elf" @"objects.list"   -mcpu=cortex-m4 -T"/home/kimyujeong/workspace_ondevice_2/syne_car_project/no_ult/STM32F411RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="no_ult.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: no_ult.elf
+ 
+arm-none-eabi-size  no_ult.elf 
+arm-none-eabi-objdump -h -S no_ult.elf  > "no_ult.list"
+   text	   data	    bss	    dec	    hex	filename
+  34020	    108	   2532	  36660	   8f34	no_ult.elf
+Finished building: default.size.stdout
+ 
+Finished building: no_ult.list
+ 
+08:17:06 **** Incremental Build of configuration Debug for project no_ult ****
+make -j12 all 
+arm-none-eabi-size  no_ult.elf 
+   text	   data	    bss	    dec	    hex	filename
+  34020	    108	   2532	  36660	   8f34	no_ult.elf
+Finished building: default.size.stdout
+ 

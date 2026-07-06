@@ -1,0 +1,12 @@
+LaunchTargetManager/org.eclipse.launchbar.core.launchTargetType.local,Local/arch=x86_64
+LaunchTargetManager/org.eclipse.launchbar.core.launchTargetType.local,Local/name=Local
+LaunchTargetManager/org.eclipse.launchbar.core.launchTargetType.local,Local/os=linux
+activeLaunchTarget=null\:---
+configDescList=org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:stm_can Debug,org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:rc_car_5_mix Debug,org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:blinker_RGB Debug,org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:sync_car_stm Debug,org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:cam Debug,org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:no_ult Debug
+eclipse.preferences.version=1
+org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:blinker_RGB\ Debug/activeLaunchMode=run
+org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:blinker_RGB\ Debug/activeLaunchTarget=null\:---
+org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:stm_can\ Debug/activeLaunchMode=run
+org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:stm_can\ Debug/activeLaunchTarget=null\:---
+org.eclipse.launchbar.core.descriptorType.default\:stm_can\ Debug/activeLaunchMode=run
+org.eclipse.launchbar.core.descriptorType.default\:stm_can\ Debug/activeLaunchTarget=org.eclipse.launchbar.core.launchTargetType.local\:Local
