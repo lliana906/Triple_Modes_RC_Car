@@ -1,0 +1,5 @@
+../Core/Src/auto.c:50:19:clamp_i	24	static
+../Core/Src/auto.c:56:17:get_avg	24	static
+../Core/Src/auto.c:62:13:Enter	16	static
+../Core/Src/auto.c:67:6:Auto_Init	16	static
+../Core/Src/auto.c:75:6:Auto_Update	56	static

@@ -1,0 +1,10 @@
+../Core/Src/auto.c:34:20:LMotor	16	static
+../Core/Src/auto.c:35:20:RMotor	16	static
+../Core/Src/auto.c:37:20:Drive_Stop	8	static
+../Core/Src/auto.c:41:20:Drive_Forward	8	static
+../Core/Src/auto.c:46:20:Drive_Back	8	static
+../Core/Src/auto.c:51:20:Drive_TurnLeft	8	static
+../Core/Src/auto.c:57:20:Drive_TurnRight	8	static
+../Core/Src/auto.c:78:13:Enter	16	static
+../Core/Src/auto.c:84:6:Auto_Init	8	static
+../Core/Src/auto.c:89:6:Auto_Update	24	static

@@ -1,0 +1,185 @@
+///*
+// * re.c
+// *
+// *  Created on: Feb 27, 2026
+// *      Author: kimyujeong
+// */
+//
+//
+///*
+// * auto.c  (WALL FOLLOW + PANIC TURN, NO BACKWARD)
+// *
+// * 목적:
+// *  1) 한쪽 벽(기본: RIGHT)을 일정 거리로 따라가며 주행 (도리도리 줄임)
+// *  2) 앞이 가까우면(PANIC) 강하게 회전해서 충돌 방지
+// *
+// * 특징:
+// *  - 후진 없음
+// *  - if문 최소, 튜닝 파라미터 적음
+// *  - 좌/우 센서가 약해도 target 거리(TARGET_CM)만 크게 잡으면 벽 뽀뽀 감소
+// */
+//
+//#include "auto.h"
+//#include "mot.h"
+//
+///* ===================== 튜닝 파라미터(여기만 바꾸면 됨) ===================== */
+//
+///* (1) 기본 속도 */
+//#define BASE_SPD        70
+//// ↑ 올리면: 빠름(박기 쉬움) / ↓ 내리면: 안정적(느림)
+//
+///* (2) 벽과 유지할 목표 거리 (RIGHT 벽 기준) */
+//#define TARGET_CM       35
+//// ↑ 올리면: 벽에서 더 떨어짐(안전) / ↓ 내리면: 벽에 더 붙음(뽀뽀 가능)
+//
+///* (3) 조향 민감도 (크면 더 꺾음, 작으면 더 직진) */
+//#define KP              3
+//// ↑ 올리면: 더 적극적으로 벽에서 떨어짐(지그재그↑ 가능)
+//// ↓ 내리면: 부드럽게 감(벽으로 슬금슬금 붙을 수 있음)
+//
+///* (4) 조향 최대 보정량(도리도리 제한) */
+//#define STEER_MAX       25
+//// ↑ 올리면: 많이 꺾음(코너 잘 돎) / ↓ 올리면: 부드러움(코너 못 돌 수 있음)
+//
+///* (5) 앞 장애물 “위험 거리” */
+//#define PANIC_CM        45
+//// ↑ 올리면: 멀리서부터 회전 시작(안전) / ↓ 내리면: 가까워야 회전(박기 쉬움)
+//
+///* (6) Panic 회전 유지 시간 */
+//#define PANIC_TURN_MS   70
+//// ↑ 올리면: 더 많이 회전(한바퀴 위험↑) / ↓ 내리면: 회전 약함(코너 못 돌 수 있음)
+//
+///* (7) Panic 후 쿨다운(연속 회전 방지) */
+//#define PANIC_COOLDOWN_MS 150
+//// ↑ 올리면: 연속 회전 방지 강함(멍청해질 수 있음)
+//// ↓ 내리면: 더 민감(빙글 위험↑)
+//
+///* (8) 초음파 0값(측정 실패) 처리 */
+//#define HOLD_LAST_ON_ZERO  1
+//// 1: 0이면 이전값 유지(추천) / 0: 0이면 멀다고 가정(위험할 수 있음)
+//
+///* ===================== 내부 유틸 ===================== */
+//
+//static inline int clamp_i(int v, int lo, int hi)
+//{
+//  if (v < lo) return lo;
+//  if (v > hi) return hi;
+//  return v;
+//}
+//
+///* 좌/우 모터 매핑(너는 A=LEFT, B=RIGHT로 쓰고 있음) */
+//static inline void L(int spd, int dir){ MotorA_Control(spd, dir); }
+//static inline void R(int spd, int dir){ MotorB_Control(spd, dir); }
+//
+//#define DIR_FWD 1
+//#define DIR_BWD 0
+//
+///* ===================== 상태 ===================== */
+//typedef enum {
+//  ST_RUN = 0,
+//  ST_PANIC_L,
+//  ST_PANIC_R
+//} AutoState;
+//
+//static AutoState st;
+//static uint32_t st_enter_ms;
+//static uint32_t panic_cd_until;
+//
+///* 센서 값(0 처리용) */
+//static uint16_t last_left, last_front, last_right;
+//
+//static void Enter(AutoState ns)
+//{
+//  st = ns;
+//  st_enter_ms = HAL_GetTick();
+//}
+//
+//void Auto_Init(void)
+//{
+//  st = ST_RUN;
+//  st_enter_ms = HAL_GetTick();
+//  panic_cd_until = 0;
+//
+//  last_left = last_front = last_right = 0;
+//}
+//
+///* ===================== 핵심: Wall Follow + Panic ===================== */
+//void Auto_Update(uint16_t left_cm, uint16_t front_cm, uint16_t right_cm)
+//{
+//  uint32_t now = HAL_GetTick();
+//
+//  /* ---- 0값 처리(측정 실패) ---- */
+//#if HOLD_LAST_ON_ZERO
+//  if (left_cm  == 0) left_cm  = last_left;  else last_left  = left_cm;
+//  if (front_cm == 0) front_cm = last_front; else last_front = front_cm;
+//  if (right_cm == 0) right_cm = last_right; else last_right = right_cm;
+//#endif
+//
+//  /* ---- 1) Panic 진입(앞이 위험하면 최우선) ---- */
+//  if (front_cm > 0 && front_cm <= PANIC_CM)
+//  {
+//    if (now >= panic_cd_until)   // 연속 회전 방지
+//    {
+//      /* 어느 쪽이 더 넓은지 보고 회전 방향 결정 */
+//      if (left_cm >= right_cm) Enter(ST_PANIC_L);
+//      else                     Enter(ST_PANIC_R);
+//    }
+//  }
+//
+//  /* ---- 2) 상태별 동작 ---- */
+//  switch (st)
+//  {
+//    case ST_RUN:
+//    {
+//      /* ========== WALL FOLLOW (RIGHT 벽 기준) ==========
+//         error = TARGET - right
+//          - right가 TARGET보다 작다(너무 가까움) => error 양수 => steer 양수
+//            -> left slower, right faster => 왼쪽으로 살짝(벽에서 떨어짐)
+//          - right가 TARGET보다 크다(너무 멀다) => error 음수 => steer 음수
+//            -> left faster, right slower => 오른쪽으로 붙음
+//      */
+//      int err = (int)TARGET_CM - (int)right_cm;
+//      int steer = KP * err;
+//      steer = clamp_i(steer, -STEER_MAX, STEER_MAX);
+//
+//      int l_spd = BASE_SPD - steer;
+//      int r_spd = BASE_SPD + steer;
+//
+//      /* 속도 하한/상한(0~PWM max는 mot.c에서 clamp 됨) */
+//      l_spd = clamp_i(l_spd, 0, 1000);
+//      r_spd = clamp_i(r_spd, 0, 1000);
+//
+//      L(l_spd, DIR_FWD);
+//      R(r_spd, DIR_FWD);
+//    }
+//    break;
+//
+//    case ST_PANIC_L:
+//      /* 제자리 좌회전: 왼쪽 후진, 오른쪽 전진 */
+//      L(BASE_SPD, DIR_BWD);
+//      R(BASE_SPD, DIR_FWD);
+//
+//      if (now - st_enter_ms >= PANIC_TURN_MS)
+//      {
+//        panic_cd_until = now + PANIC_COOLDOWN_MS;
+//        Enter(ST_RUN);
+//      }
+//      break;
+//
+//    case ST_PANIC_R:
+//      /* 제자리 우회전: 왼쪽 전진, 오른쪽 후진 */
+//      L(BASE_SPD, DIR_FWD);
+//      R(BASE_SPD, DIR_BWD);
+//
+//      if (now - st_enter_ms >= PANIC_TURN_MS)
+//      {
+//        panic_cd_until = now + PANIC_COOLDOWN_MS;
+//        Enter(ST_RUN);
+//      }
+//      break;
+//
+//    default:
+//      Enter(ST_RUN);
+//      break;
+//  }
+//}

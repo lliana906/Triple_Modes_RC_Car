@@ -1,0 +1,6 @@
+../Core/Src/ult.c:24:6:ULT_Init	16	static
+../Core/Src/ult.c:41:6:ULT_Trigger	32	static
+../Core/Src/ult.c:67:6:ULT_TIM_IC_CaptureCallback	32	static
+../Core/Src/ult.c:107:10:ULT_GetDistance	16	static
+../Core/Src/ult.c:112:9:ULT_IsReady	16	static
+../Core/Src/ult.c:117:6:ULT_ClearReady	16	static

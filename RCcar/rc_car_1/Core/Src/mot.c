@@ -1,0 +1,68 @@
+///*
+// * mot.c
+// *
+// *  Created on: Feb 24, 2026
+// *      Author: kimyujeong
+// */
+//
+//
+
+#include "mot.h"
+extern TIM_HandleTypeDef htim3;
+
+/* 모터 A 제어 함수 */
+void MotorA_Control(int speed, int direction)
+{
+    if (direction == 1) {   // 전진
+        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_A_IN1_PIN, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_A_IN2_PIN, GPIO_PIN_RESET);
+    } else {                // 후진
+        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_A_IN1_PIN, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_A_IN2_PIN, GPIO_PIN_SET);
+    }
+
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, speed);
+}
+
+
+/* 모터 B 제어 함수 (방향 뒤집기) */
+void MotorB_Control(int speed, int direction)
+{
+    if (direction == 1) {   // 전진
+        // 🔥 여기 뒤집음
+        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_B_IN3_PIN, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_B_IN4_PIN, GPIO_PIN_SET);
+    } else {                // 후진
+        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_B_IN3_PIN, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_B_IN4_PIN, GPIO_PIN_RESET);
+    }
+
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, speed);
+}
+
+//#include "mot.h"
+//extern TIM_HandleTypeDef htim3;
+//
+///* 모터 A 제어 함수 (방향 및 속도 제어) */
+//void MotorA_Control(int speed, int direction) {
+//    if (direction == 1) {
+//        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_A_IN1_PIN, GPIO_PIN_SET);
+//        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_A_IN2_PIN, GPIO_PIN_RESET);
+//    } else {
+//        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_A_IN1_PIN, GPIO_PIN_RESET);
+//        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_A_IN2_PIN, GPIO_PIN_SET);
+//    }
+//    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, speed);
+//}
+//
+///* 모터 B 제어 함수 (방향 및 속도 제어) */
+//void MotorB_Control(int speed, int direction) {
+//    if (direction == 1) {
+//        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_B_IN3_PIN, GPIO_PIN_SET);
+//        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_B_IN4_PIN, GPIO_PIN_RESET);
+//    } else {
+//        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_B_IN3_PIN, GPIO_PIN_RESET);
+//        HAL_GPIO_WritePin(MOTOR_GPIO_PORT, MOTOR_B_IN4_PIN, GPIO_PIN_SET);
+//    }
+//    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, speed);
+//}

@@ -1,0 +1,2 @@
+../Core/Src/mot.c:14:6:MotorA_Control	16	static
+../Core/Src/mot.c:29:6:MotorB_Control	16	static

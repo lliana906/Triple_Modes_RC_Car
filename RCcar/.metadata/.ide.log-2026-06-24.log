@@ -1,0 +1,6 @@
+2026-06-24 08:07:48,805 [INFO] Activator:176 - 
+
+
+2026-06-24 08:07:48,809 [INFO] Activator:177 - !SESSION log4j initialized
+2026-06-24 08:07:50,811 [INFO] LogOutputStream:77 - [STDOUT_REDIRECT] 
+2026-06-24 10:42:36,457 [ERROR] LogOutputStream:75 - [STDERR_REDIRECT] SWT SessionManagerDBus: Failed to UnregisterClient: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.gnome.SessionManager was not provided by any .service files
