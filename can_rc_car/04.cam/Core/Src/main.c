@@ -21,8 +21,8 @@
 #include "auto.h"
 #include "mot.h"
 #include "bt.h"
-#include "can.h"      // ✅ 추가: MCP2515 CAN 수신 (라즈베리파이 색인식 속도명령)
-#include "dbgserial.h" // ✅ 추가: USART2 = 0/1/2 속도명령 테스트 입력 + 5초 상태 출력
+#include "can.h"      
+#include "dbgserial.h"
 #include <stdio.h>
 /* USER CODE END Includes */
 
@@ -60,7 +60,7 @@ PUTCHAR_PROTOTYPE
 
 /* USER CODE BEGIN PV */
 static uint8_t bt_rx = 0;
-static uint8_t dbg2_rx = 0;   // ✅ 추가: USART2 수신 바이트
+static uint8_t dbg2_rx = 0;  
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
