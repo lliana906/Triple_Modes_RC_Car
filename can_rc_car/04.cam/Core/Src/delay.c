@@ -7,7 +7,7 @@
 
 #include "delay.h"
 
-
+//블로킹을 위해서
 void delay_us(uint16_t us)
 {
   __HAL_TIM_SET_COUNTER(&htim11, 0);
